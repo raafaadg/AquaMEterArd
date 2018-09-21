@@ -1,89 +1,97 @@
-// Programa: Web Server com modulo ESP8266
-// Alteracoes e adaptacoes: FILIPEFLOP
- 
-#include <SoftwareSerial.h>
- 
-//RX pino 2, TX pino 3
-SoftwareSerial esp8266(2, 3);
- 
-#define DEBUG true
- 
-void setup()
-{
-  pinMode(7,OUTPUT);
-  digitalWrite(7,1);
-  Serial.begin(115200);
-  esp8266.begin(115200);
- 
-//  sendData("AT+RST", 2000, DEBUG); // rst
-//  // Conecta a rede wireless
-//  sendData("AT+CWMODE=2", 1000, DEBUG);
-//  delay(3000);
-////  sendData("AT+CWJAP=\"Leutner\",\"engenharia12\"", 2000, DEBUG);
-////  delay(3000);
-//  // Mostra o endereco IP
-//  sendData("AT+CIFSR", 1000, DEBUG);
-//  // Configura para multiplas conexoes
-//  sendData("AT+CIPMUX=0", 1000, DEBUG);
-//  // Inicia o web server na porta 80
-//  sendData("AT+CIPSERVER=1,80", 1000, DEBUG);
-}
- 
-void loop()
-{
-  // Verifica se o ESP8266 esta enviando dados
-  if (esp8266.available())
-  {
-    if (esp8266.find("+IPD,"))
-    {
-      delay(300);
-//      int connectionId = esp8266.read() - 48;
-      Serial.print("VALOR RECEBIDO");
-      Serial.print(esp8266.read());
-      if(esp8266.find("LIGA"))
-        digitalWrite(7,0);
-      else
-        digitalWrite(7,1);
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 
-      String asw = "recebeu";
-      String cipSend = "AT+CIPSEND=";
-      cipSend += 0;
-//      cipSend += connectionId;
-      cipSend += ",";
-      cipSend += asw.length();
-//      cipSend += "rn";
+ESP8266WebServer server(80);
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Booting");
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("RAIFF ESP");
  
-      sendData(cipSend, 1000, DEBUG);
-      sendData(asw, 1000, DEBUG);
- 
-      String closeCommand = "AT+CIPCLOSE=";
-      closeCommand += 0; // append connection id
-//      closeCommand += connectionId; // append connection id
-//      closeCommand += "rn";
- 
-      sendData(closeCommand, 3000, DEBUG);
+
+  server.on ( "/aqua/1", []() {
+    server.send ( 200, "application/json", "{\n \"time\": \"02:41:48 PM\",\n \"milliseconds_since_epoch\": 1525876908085,\n \"date\": \"05-09-2018\"\n}" );
+  } );
+  server.on("/aqua/liga", liga); 
+  server.on("/aqua/des", des); 
+  server.onNotFound(handleNotFound);
+  
+  server.begin();
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_SPIFFS
+      type = "filesystem";
     }
-  }
+
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    Serial.println("Start updating " + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+  ArduinoOTA.begin();
+  Serial.println(WiFi.localIP());
 }
- 
-String sendData(String command, const int timeout, boolean debug)
-{
-  // Envio dos comandos AT para o modulo
-  String response = "";
-  esp8266.print(command);
-  long int time = millis();
-  while ( (time + timeout) > millis())
-  {
-    while (esp8266.available())
-    {
-      // The esp has data so display its output to the serial window
-      char c = esp8266.read(); // read the next character.
-      response += c;
+
+void loop() {
+  server.handleClient();
+  ArduinoOTA.handle();
+  
+  if(Serial.available()>0){
+    String conteudo = "";
+    char caractere;
+    while(Serial.available() > 0) {
+      caractere = Serial.read();
+      if (caractere != '\n'){
+        conteudo.concat(caractere);
+      }
+      delay(10);       
     }
+    server.send(200,"text/plain",conteudo);
   }
-  if (debug)
-  {
-    Serial.print(response);
+  
+}
+void liga(){
+  Serial.print("liga");
+  server.send(200,"text/plain","liga");
+}void des(){
+  Serial.print("des");
+  //server.send(200,"text/plain","desliga");
+}
+void handleNotFound(){
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server.uri();
+  message += "\nMethod: ";
+  message += (server.method() == HTTP_GET)?"GET":"POST";
+  message += "\nArguments: ";
+  message += server.args();
+  message += "\n";
+  for (uint8_t i=0; i<server.args(); i++){
+    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
   }
-  return response;
+  server.send(404, "text/plain", message);
 }
