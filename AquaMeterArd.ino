@@ -5,18 +5,24 @@
 #include <ArduinoOTA.h>
 
 ESP8266WebServer server(80);
+WiFiUDP Udp;
+unsigned int localUdpPort = 4200;
+char incomingPacket[255];
+String req, DATA = "", conteudo = "";
+boolean freque = false;
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
   WiFi.mode(WIFI_AP);
   WiFi.softAP("RAIFF ESP");
- 
 
   server.on ( "/aqua/1", []() {
     server.send ( 200, "application/json", "{\n \"time\": \"02:41:48 PM\",\n \"milliseconds_since_epoch\": 1525876908085,\n \"date\": \"05-09-2018\"\n}" );
   } );
   server.on("/aqua/liga", liga); 
   server.on("/aqua/des", des); 
+  server.on("/aqua/data", data); 
+  server.on("/aqua/freq", freq); 
   server.onNotFound(handleNotFound);
   
   server.begin();
@@ -53,7 +59,7 @@ void setup() {
     }
   });
   ArduinoOTA.begin();
-  Serial.println(WiFi.localIP());
+  Udp.begin(localUdpPort);
 }
 
 void loop() {
@@ -61,7 +67,7 @@ void loop() {
   ArduinoOTA.handle();
   
   if(Serial.available()>0){
-    String conteudo = "";
+    conteudo = "";
     char caractere;
     while(Serial.available() > 0) {
       caractere = Serial.read();
@@ -70,17 +76,33 @@ void loop() {
       }
       delay(10);       
     }
-    server.send(200,"text/plain",conteudo);
+    if(freque){
+        server.send(200,"text/plain",conteudo);
+        freque = false;
+        }
   }
-  
 }
+
 void liga(){
-  Serial.print("liga");
+  Serial.print("l");
   server.send(200,"text/plain","liga");
 }void des(){
-  Serial.print("des");
-  //server.send(200,"text/plain","desliga");
+  Serial.print("d");
+  server.send(200,"text/plain","desliga");
 }
+
+void data(){
+  if(conteudo == "")
+    server.send(200,"text/plain","DATA vazio");
+  else
+    server.send(200,"text/plain",conteudo);
+}
+
+void freq(){
+  Serial.print("f");
+  freque = true;
+}
+
 void handleNotFound(){
   String message = "File Not Found\n\n";
   message += "URI: ";
